@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply antialiased;
+  }
+  ::selection {
+    background: #c19a5b;
+    color: #191512;
+  }
+  :focus-visible {
+    outline: 2px solid #c19a5b;
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .site-container {
+    @apply mx-auto w-full max-w-site px-5 sm:px-8;
+  }
+  .eyebrow {
+    @apply font-sans text-[11px] uppercase tracking-[0.28em] text-brass;
+  }
+  /* Dark form fields for public pages (checkout, contact, event inquiries) */
+  .field-dark {
+    @apply w-full border border-parchment/25 bg-ink-soft px-3 py-2.5 text-sm text-parchment placeholder:text-parchment-faint focus:border-brass focus:outline-none;
+  }
+  .label-dark {
+    @apply mb-1.5 block font-sans text-[11px] uppercase tracking-[0.18em] text-parchment-dim;
+  }
+}
+
+/* react-day-picker theming (booking calendar) */
+.rdp {
+  --rdp-cell-size: 38px;
+  --rdp-accent-color: #c19a5b;
+  --rdp-background-color: rgba(193, 154, 91, 0.16);
+  margin: 0;
+}
+.rdp-day_selected,
+.rdp-day_range_start,
+.rdp-day_range_end {
+  color: #191512 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Slow settle on the home hero; disabled by the reduced-motion block above. */
+@keyframes hero-zoom {
+  from {
+    transform: scale(1.07);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+.hero-zoom {
+  animation: hero-zoom 9s ease-out both;
+}

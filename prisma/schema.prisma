@@ -1,0 +1,320 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Staff & auth ----------
+
+enum Role {
+  OWNER
+  MANAGER
+  FRONT_DESK
+  HOUSEKEEPING
+}
+
+model User {
+  id           String               @id @default(cuid())
+  name         String
+  email        String               @unique
+  passwordHash String
+  role         Role                 @default(FRONT_DESK)
+  createdAt    DateTime             @default(now())
+  resetTokens  PasswordResetToken[]
+  tasks        HousekeepingTask[]
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+// ---------- Rooms & inventory ----------
+// A RoomType is what guests book ("Tower Suite"). A Room is a physical unit
+// of that type ("Room 301"). Availability is counted at the type level;
+// individual rooms carry housekeeping state and can be blocked for a date range.
+
+model RoomType {
+  id               String     @id @default(cuid())
+  slug             String     @unique
+  name             String
+  shortDescription String
+  description      String     @db.Text
+  sizeSqm          Int
+  bedConfig        String
+  view             String
+  maxGuests        Int
+  baseRateCents    Int // nightly base rate in EUR cents
+  images           String[]
+  amenities        String[]
+  featured         Boolean    @default(false)
+  active           Boolean    @default(true)
+  sortOrder        Int        @default(0)
+  rooms            Room[]
+  bookings         Booking[]
+  rateRules        RateRule[]
+}
+
+enum RoomStatus {
+  CLEAN
+  DIRTY
+  OCCUPIED
+  MAINTENANCE
+}
+
+model Room {
+  id         String             @id @default(cuid())
+  number     String             @unique
+  floor      Int
+  status     RoomStatus         @default(CLEAN)
+  notes      String?
+  roomTypeId String
+  roomType   RoomType           @relation(fields: [roomTypeId], references: [id])
+  blocks     RoomBlock[]
+  bookings   Booking[]          @relation("AssignedRoom")
+  tasks      HousekeepingTask[]
+}
+
+// Takes a physical room out of sale for a date range (renovation, damage, owner use).
+model RoomBlock {
+  id        String   @id @default(cuid())
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date // exclusive, same convention as checkOut
+  reason    String
+  createdAt DateTime @default(now())
+
+  @@index([startDate, endDate])
+}
+
+// ---------- Pricing ----------
+
+enum RateRuleKind {
+  MULTIPLIER // value is a percentage of the base rate, e.g. 125 = base +25%
+  FIXED // value is an absolute nightly rate in cents
+}
+
+model RateRule {
+  id         String       @id @default(cuid())
+  name       String
+  kind       RateRuleKind
+  value      Int
+  startDate  DateTime     @db.Date
+  endDate    DateTime     @db.Date // inclusive
+  priority   Int          @default(0) // higher wins; type-specific beats global on ties
+  active     Boolean      @default(true)
+  roomTypeId String? // null = applies to every room type
+  roomType   RoomType?    @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+}
+
+enum AddOnPricing {
+  PER_BOOKING
+  PER_NIGHT
+  PER_GUEST
+  PER_GUEST_NIGHT
+}
+
+model AddOn {
+  id          String         @id @default(cuid())
+  slug        String         @unique
+  name        String
+  description String
+  priceCents  Int
+  pricing     AddOnPricing
+  active      Boolean        @default(true)
+  sortOrder   Int            @default(0)
+  bookings    BookingAddOn[]
+}
+
+// ---------- Guests & bookings ----------
+
+model Guest {
+  id               String    @id @default(cuid())
+  firstName        String
+  lastName         String
+  email            String    @unique
+  phone            String?
+  country          String?
+  marketingConsent Boolean   @default(false)
+  notes            String? // staff-only
+  createdAt        DateTime  @default(now())
+  bookings         Booking[]
+}
+
+enum BookingStatus {
+  PENDING // created, awaiting payment; holds inventory for 30 minutes
+  CONFIRMED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+  NO_SHOW
+}
+
+enum BookingSource {
+  WEBSITE
+  PHONE
+  EMAIL
+  WALK_IN
+}
+
+model Booking {
+  id                    String         @id @default(cuid())
+  reference             String         @unique // e.g. HT-7K2M4A
+  roomTypeId            String
+  roomType              RoomType       @relation(fields: [roomTypeId], references: [id])
+  assignedRoomId        String?
+  assignedRoom          Room?          @relation("AssignedRoom", fields: [assignedRoomId], references: [id])
+  guestId               String
+  guest                 Guest          @relation(fields: [guestId], references: [id])
+  checkIn               DateTime       @db.Date
+  checkOut              DateTime       @db.Date // exclusive
+  adults                Int
+  children              Int            @default(0)
+  status                BookingStatus  @default(PENDING)
+  source                BookingSource  @default(WEBSITE)
+  nightlyRates          Json // [{ date: "2026-08-14", rateCents: 22000 }, ...]
+  subtotalCents         Int
+  addOnsCents           Int            @default(0)
+  taxCents              Int
+  totalCents            Int
+  currency              String         @default("EUR")
+  stripePaymentIntentId String?        @unique
+  specialRequests       String?
+  cancellationReason    String?
+  cancelledAt           DateTime?
+  addOns                BookingAddOn[]
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  @@index([checkIn, checkOut])
+  @@index([status])
+}
+
+model BookingAddOn {
+  id         String  @id @default(cuid())
+  bookingId  String
+  booking    Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  addOnId    String
+  addOn      AddOn   @relation(fields: [addOnId], references: [id])
+  quantity   Int     @default(1)
+  totalCents Int
+
+  @@unique([bookingId, addOnId])
+}
+
+// ---------- Reviews, packages, gallery ----------
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Review {
+  id        String       @id @default(cuid())
+  guestName String
+  location  String?
+  rating    Int // 1 to 5
+  title     String?
+  body      String       @db.Text
+  stayedAt  DateTime?    @db.Date
+  status    ReviewStatus @default(PENDING)
+  featured  Boolean      @default(false)
+  createdAt DateTime     @default(now())
+}
+
+model Package {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  tagline     String
+  description String   @db.Text
+  inclusions  String[]
+  priceCents  Int
+  priceNote   String // e.g. "per night for two"
+  image       String
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0)
+}
+
+enum GalleryCategory {
+  ROOMS
+  GROUNDS
+  DINING
+  EVENTS
+}
+
+model GalleryImage {
+  id        String          @id @default(cuid())
+  url       String
+  alt       String
+  category  GalleryCategory
+  sortOrder Int             @default(0)
+  active    Boolean         @default(true)
+}
+
+// ---------- Operations ----------
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
+}
+
+model HousekeepingTask {
+  id          String     @id @default(cuid())
+  roomId      String
+  room        Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  title       String
+  notes       String?
+  status      TaskStatus @default(OPEN)
+  assigneeId  String?
+  assignee    User?      @relation(fields: [assigneeId], references: [id])
+  dueDate     DateTime?  @db.Date
+  completedAt DateTime?
+  createdAt   DateTime   @default(now())
+}
+
+enum InquiryStatus {
+  NEW
+  CONTACTED
+  CLOSED
+}
+
+model EventInquiry {
+  id         String        @id @default(cuid())
+  name       String
+  email      String
+  phone      String?
+  eventType  String
+  eventDate  DateTime?     @db.Date
+  guestCount Int?
+  message    String        @db.Text
+  status     InquiryStatus @default(NEW)
+  createdAt  DateTime      @default(now())
+}
+
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  subject   String?
+  message   String   @db.Text
+  handled   Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// Key-value store for property settings edited from the admin dashboard.
+model Setting {
+  key   String @id
+  value String @db.Text
+}
