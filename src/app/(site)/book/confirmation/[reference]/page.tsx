@@ -56,6 +56,8 @@ export default async function ConfirmationPage({
     }
   }
 
+  if (!booking) notFound();
+
   const settings = await getSettings();
   const confirmed =
     booking.status === "CONFIRMED" || booking.status === "CHECKED_IN";
