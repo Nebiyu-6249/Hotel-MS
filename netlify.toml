@@ -1,0 +1,24 @@
+# Netlify deployment configuration.
+#
+# The build syncs the Prisma schema to the production database before
+# compiling, so the tables always exist by the time the site goes live.
+# "prisma db push" is idempotent: it creates missing tables and does nothing
+# when the schema already matches.
+#
+# Required environment variables (Site configuration > Environment variables):
+#   DATABASE_URL                        pooled Postgres connection string
+#   NEXTAUTH_URL                        https://your-site.netlify.app
+#   NEXTAUTH_SECRET                     long random string
+#   NEXT_PUBLIC_SITE_URL                https://your-site.netlify.app
+#   STRIPE_SECRET_KEY                   sk_test_...
+#   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY  pk_test_...
+#   STRIPE_WEBHOOK_SECRET               whsec_... (from the Stripe dashboard endpoint)
+#   RESEND_API_KEY                      optional; emails log to console without it
+#   EMAIL_FROM                          optional
+
+[build]
+  command = "npx prisma db push && npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
