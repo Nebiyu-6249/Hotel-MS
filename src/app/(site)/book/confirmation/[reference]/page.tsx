@@ -56,6 +56,10 @@ export default async function ConfirmationPage({
     }
   }
 
+  // The re-fetch above happens inside a try/catch, so guard once more before
+  // reading booking fields.
+  if (!booking) notFound();
+
   const settings = await getSettings();
   const confirmed =
     booking.status === "CONFIRMED" || booking.status === "CHECKED_IN";
